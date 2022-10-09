@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity >=0.6.12;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+
+import "./EphereFootballerERC721.sol";
+
+contract EphereFootballMarket is Ownable, Pausable {
+  mapping(uint => uint) private _canBeHiredFor;
+  mapping(uint => address) private _hiredBy;
+  mapping(uint => uint) private _hiredDate;
+  mapping(uint => uint) private _tokenPrice;
+
+  EphereFootballerERC721 private _efpERC721;
+
+  constructor(address efpERC721Address) {
+    _efpERC721 = EphereFootballerERC721(efpERC721Address);
+  }
+
+  function hire(uint tokenId) payable external virtual whenNotPaused {
+    require(_canBeHiredFor[tokenId] > 0, "EphereFootballMarket: tokenId is not hireable");
+    require(_hiredBy[tokenId] == address(0x0), "EphereFootballMarket: tokenId is already hired");
+    require(msg.value >= _tokenPrice[tokenId], "EphereFootballMarket: you gotta pay for this");
+    
+    _hiredBy[tokenId] = address(msg.sender);
+    _hiredDate[tokenId] = block.timestamp;
+  }
+
+  function setHirable(uint tokenId, uint numberOfDays, uint price) external whenNotPaused {
+    require(_efpERC721.ownerOf(tokenId) == address(msg.sender), "EphereFootballMarket: you don't have permissions");
+    _canBeHiredFor[tokenId] = numberOfDays;
+    _tokenPrice[tokenId] = price;
+  }
+
+  function setUnhirable(uint tokenId) external whenNotPaused {
+    require(_efpERC721.ownerOf(tokenId) == address(msg.sender), "EphereFootballMarket: you don't have permissions");
+    delete _canBeHiredFor[tokenId];
+    delete _tokenPrice[tokenId];
+  }
+
+  function userOf(uint tokenId) external view returns (address) {
+    if (_hiredBy[tokenId] != address(0x0)) {
+      uint expireDate = _hiredDate[tokenId] + _canBeHiredFor[tokenId];
+      if (block.timestamp < expireDate) {
+        return _hiredBy[tokenId];
+      }
+    }
+
+    return _efpERC721.ownerOf(tokenId);
+  }
+
+  function withdraw() external onlyOwner {
+    payable(msg.sender).transfer(address(this).balance);
+  }
+}
